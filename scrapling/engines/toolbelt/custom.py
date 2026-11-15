@@ -69,10 +69,13 @@ class Response(Selector):
         self.headers = headers
         self.request_headers = request_headers
         self.history = history or []
+        # `url` stays the real page address (drives urljoin/follow/relative links);
+        # `adaptive_domain` only namespaces the adaptive fingerprints inside the storage.
         super().__init__(
             content=content,
-            url=adaptive_domain or url,
+            url=url,
             encoding=encoding,
+            adaptive_domain=adaptive_domain,
             **selector_config,
         )
         if _log:

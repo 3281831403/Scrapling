@@ -97,6 +97,8 @@ if element1.text == element2.text:
 ```
 Note that I introduced a new argument called `adaptive_domain`. This is because, for Scrapling, these are two different domains (`archive.org` and `stackoverflow.com`), so Scrapling will isolate their `adaptive` data. To inform Scrapling that they are the same website, we must pass the custom domain we wish to use while saving `adaptive` data for both, ensuring Scrapling doesn't isolate them.
 
+`adaptive_domain` only namespaces the stored adaptive fingerprints; it never changes the response's real URL. `response.url`, `urljoin()`, and `follow()` keep using the page's actual address, so relative links resolve correctly even when an `adaptive_domain` is set. Two pages sharing the same `adaptive_domain` reuse each other's fingerprints regardless of their real URLs, while different `adaptive_domain` values remain fully isolated. If you pass an explicit `url` inside `storage_args`, that URL takes priority and `adaptive_domain` is ignored for the namespace.
+
 The code will be the same in a real-world scenario, except it will use the same URL for both requests, so you won't need to use the `adaptive_domain` argument. This is the closest example I can give to real-world cases, so I hope it didn't confuse you :)
 
 Hence, in the two examples above, I used both the `Selector` and `Fetcher` classes to show that the adaptive logic is the same.

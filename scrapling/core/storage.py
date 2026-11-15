@@ -13,15 +13,24 @@ from scrapling.core._types import Dict, Optional, Any, cast
 
 class StorageSystemMixin(ABC):  # pragma: no cover
     # If you want to make your own storage system, you have to inherit from this
-    def __init__(self, url: Optional[str] = None):
+    def __init__(self, url: Optional[str] = None, namespace: Optional[str] = None):
         """
         :param url: URL of the website we are working on to separate it from other websites data
+        :param namespace: A fixed fingerprint namespace (e.g. an ``adaptive_domain``). When given,
+            it is used as-is instead of deriving the namespace from ``url``, so pages served from
+            different real URLs can share the same adaptive data while unrelated sites stay isolated.
         """
         # Make the url in lowercase to handle this edge case until it's updated: https://github.com/barseghyanartur/tld/issues/124
         self.url = url.lower() if (url and isinstance(url, str)) else None
+        self.namespace = namespace.lower().strip() if (namespace and isinstance(namespace, str)) else None
 
     @lru_cache(64, typed=True)
     def _get_base_url(self, default_value: str = "default") -> str:
+        # An explicit namespace (e.g. `adaptive_domain`) always wins over anything derived
+        # from the page URL, including the "default" fallback for missing/unparseable URLs.
+        if self.namespace:
+            return self.namespace
+
         if not self.url:
             return default_value
 
@@ -76,13 +85,15 @@ class SQLiteStorageSystem(StorageSystemMixin):
     Mainly built, so the library can run in threaded frameworks like scrapy or threaded tools
     > It's optimized for threaded applications, but running it without threads shouldn't make it slow."""
 
-    def __init__(self, storage_file: str, url: Optional[str] = None):
+    def __init__(self, storage_file: str, url: Optional[str] = None, namespace: Optional[str] = None):
         """
         :param storage_file: File to be used to store elements' data.
         :param url: URL of the website we are working on to separate it from other websites data
+        :param namespace: A fixed fingerprint namespace (e.g. an ``adaptive_domain``). When given,
+            it is used as-is instead of deriving the namespace from ``url``.
 
         """
-        super().__init__(url)
+        super().__init__(url, namespace=namespace)
         self.storage_file = storage_file
         self.lock = RLock()  # Better than Lock for reentrancy
         # >SQLite default mode in the earlier version is 1 not 2 (1=thread-safe 2=serialized)
@@ -92,7 +103,9 @@ class SQLiteStorageSystem(StorageSystemMixin):
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.cursor = self.connection.cursor()
         self._setup_database()
-        log.debug(f'Storage system loaded with arguments (storage_file="{storage_file}", url="{url}")')
+        log.debug(
+            f'Storage system loaded with arguments (storage_file="{storage_file}", url="{url}", namespace="{namespace}")'
+        )
 
     def _setup_database(self) -> None:
         self.cursor.execute("""

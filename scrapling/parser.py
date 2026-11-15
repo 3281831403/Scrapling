@@ -81,6 +81,7 @@ class Selector(SelectorsGeneration):
         "__adaptive_enabled",
         "_root",
         "_storage",
+        "__adaptive_domain",
         "__keep_comments",
         "__huge_tree_enabled",
         "__attributes",
@@ -101,6 +102,7 @@ class Selector(SelectorsGeneration):
         _storage: Optional[StorageSystemMixin] = None,
         storage: Any = SQLiteStorageSystem,
         storage_args: Optional[Dict] = None,
+        adaptive_domain: str = "",
         **_,
     ):
         """The main class that works as a wrapper for the HTML input data. Using this class, you can search for elements
@@ -123,12 +125,18 @@ class Selector(SelectorsGeneration):
             priority over all adaptive related arguments/functions in the class.
         :param storage: The storage class to be passed for adaptive functionalities, see ``Docs`` for more info.
         :param storage_args: A dictionary of ``argument->value`` pairs to be passed for the storage class.
-            If empty, default values will be used.
+            If empty, default values will be used. An explicit ``url`` inside ``storage_args`` always takes
+            priority and is used as the fingerprint namespace.
+        :param adaptive_domain: A custom domain used solely to namespace adaptive fingerprints. It never changes
+            ``self.url`` (the page base address used by ``urljoin`` and relative-link resolution): pages fetched
+            from different real URLs but sharing the same ``adaptive_domain`` reuse each other's fingerprints,
+            while different ``adaptive_domain`` values stay isolated. Ignored when ``storage_args`` has a ``url``.
         """
         if root is None and content is None:
             raise ValueError("Selector class needs HTML content, or root arguments to work")
 
         self.url = url
+        self.__adaptive_domain = adaptive_domain or ""
         self._raw_body: str | bytes = ""
         self.encoding = encoding
         self.__huge_tree_enabled = huge_tree
@@ -178,16 +186,29 @@ class Selector(SelectorsGeneration):
                 self._storage = _storage
             else:
                 if not storage_args:
+                    # Default storage: namespace comes from the page URL, or from
+                    # `adaptive_domain` when the caller wants several real URLs to share fingerprints.
                     storage_args = {
                         "storage_file": __DEFAULT_DB_FILE__,
                         "url": url,
                     }
+                    if self.__adaptive_domain:
+                        storage_args["namespace"] = self.__adaptive_domain
 
                 if not hasattr(storage, "__wrapped__"):
                     raise ValueError("Storage class must be wrapped with lru_cache decorator, see docs for info")
 
                 if not issubclass(storage.__wrapped__, StorageSystemMixin):  # pragma: no cover
                     raise ValueError("Storage system must be inherited from class `StorageSystemMixin`")
+
+                # An explicit `url` in storage_args wins: the caller named the fingerprint namespace
+                # directly, so `adaptive_domain` must not override it. When only `storage_file` (and
+                # no `url`) was passed, fall back to `adaptive_domain`, then the real page URL.
+                if "url" not in storage_args and "namespace" not in storage_args:
+                    if self.__adaptive_domain:
+                        storage_args["namespace"] = self.__adaptive_domain
+                    elif url:
+                        storage_args["url"] = url
 
                 self._storage = storage(**storage_args)
 
@@ -222,6 +243,7 @@ class Selector(SelectorsGeneration):
             encoding=self.encoding,
             adaptive=self.__adaptive_enabled,
             _storage=self._storage,
+            adaptive_domain=self.__adaptive_domain,
             keep_comments=self.__keep_comments,
             huge_tree=self.__huge_tree_enabled,
         )
@@ -232,6 +254,7 @@ class Selector(SelectorsGeneration):
         encoding = self.encoding
         adaptive = self.__adaptive_enabled
         storage = self._storage
+        adaptive_domain = self.__adaptive_domain
         comments = self.__keep_comments
         huge_tree = self.__huge_tree_enabled
 
@@ -242,6 +265,7 @@ class Selector(SelectorsGeneration):
                 encoding=encoding,
                 adaptive=adaptive,
                 _storage=storage,
+                adaptive_domain=adaptive_domain,
                 keep_comments=comments,
                 huge_tree=huge_tree,
             )

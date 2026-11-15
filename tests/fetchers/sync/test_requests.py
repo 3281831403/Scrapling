@@ -141,7 +141,9 @@ class TestFetcher:
         Fetcher.configure(adaptive=True, adaptive_domain="configured.test")
         configured = fetcher.get(self.html_url)
         assert configured._storage is not None
-        assert configured.url == "configured.test"
+        # `adaptive_domain` namespaces fingerprints but must not replace the page URL
+        assert configured.url == self.html_url
+        assert configured._storage.namespace == "configured.test"
 
     def test_selector_config_overrides_configure(self, fetcher, _reset_fetcher_config):
         """A per-request ``selector_config`` overrides the class-level configure()."""
@@ -151,7 +153,8 @@ class TestFetcher:
             selector_config={"adaptive_domain": "from-request.test"},
         )
         assert response._storage is not None
-        assert response.url == "from-request.test"
+        assert response.url == self.html_url
+        assert response._storage.namespace == "from-request.test"
 
     def test_retries_below_one_still_performs_the_request(self, fetcher):
         """``retries`` below 1 means "send the request once", not "send nothing"."""

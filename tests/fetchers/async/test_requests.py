@@ -147,7 +147,9 @@ class TestAsyncFetcher:
         AsyncFetcher.configure(adaptive=True, adaptive_domain="configured.test")
         configured = await fetcher.get(urls["html_url"])
         assert configured._storage is not None
-        assert configured.url == "configured.test"
+        # `adaptive_domain` namespaces fingerprints but must not replace the page URL
+        assert configured.url == urls["html_url"]
+        assert configured._storage.namespace == "configured.test"
 
     async def test_selector_config_overrides_configure(
         self, fetcher, urls, _reset_async_fetcher_config
@@ -159,7 +161,8 @@ class TestAsyncFetcher:
             selector_config={"adaptive_domain": "from-request.test"},
         )
         assert response._storage is not None
-        assert response.url == "from-request.test"
+        assert response.url == urls["html_url"]
+        assert response._storage.namespace == "from-request.test"
 
     async def test_retries_below_one_still_performs_the_request(self, fetcher, urls):
         """``retries`` below 1 means "send the request once", not "send nothing"."""

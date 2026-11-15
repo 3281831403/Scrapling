@@ -34,6 +34,76 @@ class TestGetBaseUrl:
         assert storage.url == "https://www.example.com/page"
 
 
+class TestNamespace:
+    """The fingerprint namespace (e.g. an `adaptive_domain`) must be independent of the page URL."""
+
+    def _make_storage(self, url=None, namespace=None):
+        StorageSystemMixin._get_base_url.cache_clear()
+        return SQLiteStorageSystem(storage_file=":memory:", url=url, namespace=namespace)
+
+    def test_namespace_overrides_url_derived_fld(self):
+        storage = self._make_storage(url="https://www.example.com/page", namespace="custom-site.test")
+        assert storage.namespace == "custom-site.test"
+        assert storage._get_base_url() == "custom-site.test"
+
+    def test_namespace_is_lowercased_and_stripped(self):
+        storage = self._make_storage(url="https://example.com", namespace="  Custom-Site.TEST  ")
+        assert storage.namespace == "custom-site.test"
+
+    def test_namespace_used_when_url_missing(self):
+        # Previously a missing URL collapsed into the shared "default" namespace.
+        storage = self._make_storage(url=None, namespace="site-a.test")
+        assert storage._get_base_url() == "site-a.test"
+
+    def test_empty_namespace_falls_back_to_default(self):
+        storage = self._make_storage(url=None, namespace="")
+        assert storage.namespace is None
+        assert storage._get_base_url() == "default"
+
+    def test_different_namespaces_isolate_data_in_shared_db(self):
+        """Two namespaces in one DB must not see each other's fingerprints."""
+        SQLiteStorageSystem.cache_clear()
+        StorageSystemMixin._get_base_url.cache_clear()
+
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+            db_path = tmp.name
+
+        try:
+            tree = fromstring("<div><p id='shared'>Hello</p></div>")
+            element = tree.cssselect("p")[0]
+
+            storage_a = SQLiteStorageSystem(storage_file=db_path, namespace="site-a.test")
+            storage_a.save(element, "same-identifier")
+
+            SQLiteStorageSystem.cache_clear()
+            StorageSystemMixin._get_base_url.cache_clear()
+
+            storage_b = SQLiteStorageSystem(storage_file=db_path, namespace="site-b.test")
+            assert storage_b.retrieve("same-identifier") is None
+
+            # Reopening with the same namespace sees the fingerprint, even with a different URL
+            SQLiteStorageSystem.cache_clear()
+            StorageSystemMixin._get_base_url.cache_clear()
+            storage_a_again = SQLiteStorageSystem(
+                storage_file=db_path, url="https://totally-different.example/path", namespace="site-a.test"
+            )
+            reopened = storage_a_again.retrieve("same-identifier")
+            assert reopened is not None
+            assert reopened["attributes"]["id"] == "shared"
+        finally:
+            storage_a.close()
+            storage_b.close()
+            storage_a_again.close()
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+
+    def test_namespace_and_url_coexist(self):
+        """The page URL stays available for URL joining while the namespace drives storage."""
+        storage = self._make_storage(url="https://shop.example.com/category/x", namespace="shop-fp.test")
+        assert storage.url == "https://shop.example.com/category/x"
+        assert storage._get_base_url() == "shop-fp.test"
+
+
 class TestGetHash:
     """Test StorageSystemMixin._get_hash()"""
 
